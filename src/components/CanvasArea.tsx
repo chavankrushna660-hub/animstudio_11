@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 const EMPTY_ARRAY: any[] = [];
 import { RotateCcw, Sparkles, Feather, ZoomIn, ZoomOut, Maximize2, Activity, GitCommit } from 'lucide-react';
-import { Point, VectorObject, Bone, Pivot, Frame, Transform, RealismSettings, LassoControlPoint, SmartWarpPin, BrushSettings, LiquifyBrushSettings, CurvePathState, FlexCurveState, FlexCurveControlPoint, CustomVectorDeformNode, CustomVectorDeformState, Layer, PointShapeNode, PointShapeState, SculptBrushState } from '../types';
+import { Point, VectorObject, Bone, Pivot, Frame, Transform, RealismSettings, LassoControlPoint, SmartWarpPin, BrushSettings, LiquifyBrushSettings, CurvePathState, FlexCurveState, FlexCurveControlPoint, CustomVectorDeformNode, CustomVectorDeformState, Layer, PointShapeNode, PointShapeState, SculptBrushState, MaskRegion, ShapeStudioWorkspace, ShapeStudioPart } from '../types';
 import { calculateCustomVectorDeformedPoints, calculateRigidLinearDeformedPoints } from '../utils/vectorDeform';
 import { transform3DVertex, transform3DVertices, project3DVertex, getFaceLightColor, deformVertices3D, extrude2DTo3D } from '../utils/engine3D';
 import { Renderer3D } from '../utils/extruded3D';
@@ -1637,6 +1637,14 @@ interface CanvasAreaProps {
   setLineToolPartStrokeWidth?: (val: number) => void;
   lineToolActiveSubPathIdx?: number | null;
   setLineToolActiveSubPathIdx?: (idx: number | null) => void;
+  shapeStudioWorkspaces?: ShapeStudioWorkspace[];
+  setShapeStudioWorkspaces?: React.Dispatch<React.SetStateAction<ShapeStudioWorkspace[]>>;
+  activeShapeStudioWorkspaceId?: string | null;
+  setActiveShapeStudioWorkspaceId?: (id: string | null) => void;
+  maskToolMode?: 'hide' | 'show';
+  setMaskToolMode?: (mode: 'hide' | 'show') => void;
+  maskDrawType?: 'lasso' | 'polygon' | 'box';
+  setMaskDrawType?: (type: 'lasso' | 'polygon' | 'box') => void;
 }
 
 const initializeCageState = (obj: VectorObject): any => {
@@ -1800,7 +1808,19 @@ export default function CanvasArea({
   setLineToolPartStrokeWidth,
   lineToolActiveSubPathIdx = null,
   setLineToolActiveSubPathIdx,
+  shapeStudioWorkspaces,
+  setShapeStudioWorkspaces,
+  activeShapeStudioWorkspaceId,
+  setActiveShapeStudioWorkspaceId,
+  maskToolMode = 'hide',
+  setMaskToolMode,
+  maskDrawType = 'lasso',
+  setMaskDrawType,
 }: CanvasAreaProps) {
+  // Area Mask & Hide Tool (MSK) state & refs
+  const [maskDrawPoints, setMaskDrawPoints] = useState<Point[]>([]);
+  const [isMaskDrawing, setIsMaskDrawing] = useState<boolean>(false);
+  const maskDrawStartPointRef = useRef<Point | null>(null);
   React.useEffect(() => {
     if (registerInverseDeformer) {
       registerInverseDeformer((pts, obj) => {
@@ -4970,9 +4990,62 @@ export default function CanvasArea({
         setDragStartPoint(coords);
         setInitialTransform({ ...clickedObj.transform });
       } else {
-        // Prevent canvas shifting, but preserve active selection per guidelines
+        // Clicking empty space on canvas unselects cleanly
+        setSelectedObjectId(null);
         setDragMode('none');
       }
+      return;
+    }
+
+    // 10.1 Shape Studio (SHS) - Exclusivity Locking: Once selected, drawing cannot select another drawing!
+    if (activeTool === 'SHS') {
+      if (selectedObjectId) {
+        // Locked selection: do not allow selecting another drawing from canvas
+        const obj = objects[selectedObjectId];
+        if (obj) {
+          setDragMode('move');
+          setDragStartPoint(coords);
+          setInitialTransform({ ...obj.transform });
+        }
+        return;
+      }
+      // If no drawing selected yet, allow initial base drawing selection
+      const clickedObj = performHitTest(coords);
+      if (clickedObj) {
+        setSelectedObjectId(clickedObj.id);
+        setDragMode('move');
+        setDragStartPoint(coords);
+        setInitialTransform({ ...clickedObj.transform });
+      }
+      return;
+    }
+
+    // 10.2 Area Mask & Hide Tool (MSK) - Draw custom shape/area to hide/show specific part of individual drawing
+    if (activeTool === 'MSK') {
+      if (!selectedObjectId) {
+        const clickedObj = performHitTest(coords);
+        if (clickedObj) {
+          setSelectedObjectId(clickedObj.id);
+        }
+        return;
+      }
+
+      const obj = objects[selectedObjectId];
+      if (!obj) {
+        const clickedObj = performHitTest(coords);
+        if (clickedObj) {
+          setSelectedObjectId(clickedObj.id);
+        }
+        return;
+      }
+
+      // Start custom shape mask drawing on the single individual drawing
+      maskDrawStartPointRef.current = coords;
+      setMaskDrawPoints([coords]);
+      setIsMaskDrawing(true);
+      setDragMode('maskDrawing' as any);
+      setDragStartPoint(coords);
+      historyPush();
       return;
     }
 
@@ -5021,6 +5094,24 @@ export default function CanvasArea({
     currentCursorPosRef.current = coords;
     if (isDrawing || activeTool === 'KNF' || activeTool === 'LQB' || (activeTool === 'LSO' && lassoMode === 'pen') || isDrawing3DBone || boneStartPoint !== null || activeTool === 'PEN' || activeTool === 'BON') {
       setCurrentCursorPos(coords);
+    }
+
+    if (activeTool === 'MSK') {
+      if (isMaskDrawing && maskDrawStartPointRef.current) {
+        if (maskDrawType === 'box') {
+          const start = maskDrawStartPointRef.current;
+          const boxPts = [
+            start,
+            { x: coords.x, y: start.y },
+            coords,
+            { x: start.x, y: coords.y }
+          ];
+          setMaskDrawPoints(boxPts);
+        } else {
+          setMaskDrawPoints(prev => [...prev, coords]);
+        }
+        return;
+      }
     }
 
     if (activeTool === 'SEL') {
@@ -7231,6 +7322,37 @@ export default function CanvasArea({
       return;
     }
 
+    if (activeTool === 'MSK' && isMaskDrawing) {
+      setIsMaskDrawing(false);
+      setDragMode('none');
+      if (selectedObjectId && maskDrawPoints.length >= 3) {
+        const obj = objects[selectedObjectId];
+        if (obj) {
+          const pivot = obj.pivots?.[0] || { localX: 0, localY: 0 };
+          const localPoints = maskDrawPoints.map(p => worldToLocal(p, obj.transform, pivot));
+          const newMask: MaskRegion = {
+            id: `mask_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            name: `Cutout Area ${(obj.maskRegions?.length || 0) + 1}`,
+            points: localPoints,
+            mode: maskToolMode || 'hide',
+            visible: true,
+            createdAt: Date.now()
+          };
+          const updatedMasks = [...(obj.maskRegions || []), newMask];
+          updateObjectProperties(obj.id, { maskRegions: updatedMasks });
+        }
+      }
+      setMaskDrawPoints([]);
+      historyPush();
+      return;
+    }
+
+    if (activeTool === 'SHS' && dragMode === 'move') {
+      setDragMode('none');
+      historyPush();
+      return;
+    }
+
     if (isDrawing && activeTool === 'BRS' && strokePointsRef.current.length > 0) {
       let pts = [...strokePointsRef.current];
       if (pts.length === 1) {
@@ -8224,6 +8346,36 @@ export default function CanvasArea({
           }
         });
         ctx.clip();
+      }
+
+      // Apply Custom Shape Hide / Show Area Masks (MSK Tool)
+      if (drawObj.maskRegions && drawObj.maskRegions.length > 0) {
+        const pivotForClip = drawObj.pivots?.[0] || { localX: 0, localY: 0 };
+        drawObj.maskRegions.forEach(mask => {
+          if (mask.visible === false || !mask.points || mask.points.length < 3) return;
+          const worldMaskPoints = mask.points.map(p => localToWorld(p, drawObj.transform, pivotForClip));
+          if (worldMaskPoints.length >= 3) {
+            ctx.beginPath();
+            if (mask.mode === 'show') {
+              // Show mode: clip strictly inside the drawn polygon
+              ctx.moveTo(worldMaskPoints[0].x, worldMaskPoints[0].y);
+              for (let i = 1; i < worldMaskPoints.length; i++) {
+                ctx.lineTo(worldMaskPoints[i].x, worldMaskPoints[i].y);
+              }
+              ctx.closePath();
+              ctx.clip();
+            } else {
+              // Hide mode: evenodd cut out the drawn area (100% transparent)
+              ctx.rect(-50000, -50000, 100000, 100000);
+              ctx.moveTo(worldMaskPoints[0].x, worldMaskPoints[0].y);
+              for (let i = 1; i < worldMaskPoints.length; i++) {
+                ctx.lineTo(worldMaskPoints[i].x, worldMaskPoints[i].y);
+              }
+              ctx.closePath();
+              ctx.clip('evenodd');
+            }
+          }
+        });
       }
 
       // Check if object actually has any active deformation before calling deformLocalPoint
@@ -11087,6 +11239,84 @@ export default function CanvasArea({
       ctx.restore();
     }
 
+    // ✂️ MSK (Area Mask & Hide Tool) Live Visual Overlay
+    if (activeTool === 'MSK') {
+      ctx.save();
+      const isHideMode = maskToolMode === 'hide';
+      const strokeColor = isHideMode ? '#EF4444' : '#06B6D4';
+      const fillColor = isHideMode ? 'rgba(239, 68, 68, 0.22)' : 'rgba(6, 182, 212, 0.22)';
+
+      // 1. Existing mask regions on the selected object
+      if (selectedObjectId && objects[selectedObjectId]) {
+        const selObj = objects[selectedObjectId];
+        if (selObj.maskRegions && selObj.maskRegions.length > 0) {
+          const pivotForClip = selObj.pivots?.[0] || { localX: 0, localY: 0 };
+          selObj.maskRegions.forEach((mask) => {
+            if (!mask.points || mask.points.length < 3) return;
+            const worldPts = mask.points.map(p => localToWorld(p, selObj.transform, pivotForClip));
+            ctx.beginPath();
+            ctx.moveTo(worldPts[0].x, worldPts[0].y);
+            for (let i = 1; i < worldPts.length; i++) {
+              ctx.lineTo(worldPts[i].x, worldPts[i].y);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = mask.mode === 'hide' ? 'rgba(239, 68, 68, 0.6)' : 'rgba(6, 182, 212, 0.6)';
+            ctx.lineWidth = 1.5 / zoomScale;
+            ctx.setLineDash([4 / zoomScale, 3 / zoomScale]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          });
+        }
+      }
+
+      // 2. Currently drawn mask outline
+      if (maskDrawPoints.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(maskDrawPoints[0].x, maskDrawPoints[0].y);
+        for (let i = 1; i < maskDrawPoints.length; i++) {
+          ctx.lineTo(maskDrawPoints[i].x, maskDrawPoints[i].y);
+        }
+        if (maskDrawPoints.length >= 3) {
+          ctx.closePath();
+          ctx.fillStyle = fillColor;
+          ctx.fill();
+        }
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2 / zoomScale;
+        ctx.setLineDash([5 / zoomScale, 3 / zoomScale]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Label above first point
+        const firstPt = maskDrawPoints[0];
+        ctx.fillStyle = strokeColor;
+        ctx.font = `bold ${Math.max(10, 11 / zoomScale)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText(isHideMode ? '✂️ HIDE AREA' : '👁️ SHOW AREA', firstPt.x, firstPt.y - 8 / zoomScale);
+      }
+
+      ctx.restore();
+    }
+
+    // 🔒 SHS (Shape Studio) Locked Drawing Badge & Outline
+    if (activeTool === 'SHS' && selectedObjectId && objects[selectedObjectId]) {
+      const lockedObj = objects[selectedObjectId];
+      const bounds = getFullObjectBounds(lockedObj);
+      ctx.save();
+      ctx.strokeStyle = '#8B5CF6';
+      ctx.lineWidth = 2 / zoomScale;
+      ctx.setLineDash([6 / zoomScale, 4 / zoomScale]);
+      ctx.strokeRect(bounds.x - 4, bounds.y - 4, bounds.width + 8, bounds.height + 8);
+      ctx.setLineDash([]);
+
+      // Locked badge
+      ctx.fillStyle = '#8B5CF6';
+      ctx.font = `bold ${Math.max(10, 11 / zoomScale)}px sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.fillText(`🔒 Locked: ${lockedObj.name}`, bounds.x, bounds.y - 10 / zoomScale);
+      ctx.restore();
+    }
+
     // Restore clipping path state
     ctx.restore();
 
@@ -11278,201 +11508,6 @@ export default function CanvasArea({
             : 'cursor-crosshair'
         }`}
       />
-
-      {/* Floating HUD Bar for Points Tool (PTS) */}
-      {activeTool === 'PTS' && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-neutral-900/95 backdrop-blur border border-amber-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 animate-fade-in pointer-events-auto">
-          <span className="text-[11px] font-black text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-            Points Drawing Tool
-          </span>
-          <div className="h-4 w-px bg-neutral-800" />
-          <p className="text-[10px] text-neutral-300 font-medium hidden sm:block">
-            {ptsPoints.length === 0 
-              ? 'Click anywhere on canvas to place initial point' 
-              : `${ptsPoints.length} point${ptsPoints.length > 1 ? 's' : ''} placed. Click near first point or click button to finish.`}
-          </p>
-          {ptsPoints.length >= 2 && (
-            <>
-              <button
-                type="button"
-                onClick={() => handleFinishPtsDrawing(true)}
-                className="px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-neutral-950 text-[10px] font-black uppercase transition-all cursor-pointer shadow"
-                title="Finish as closed drawing"
-              >
-                Close Shape
-              </button>
-              <button
-                type="button"
-                onClick={() => handleFinishPtsDrawing(false)}
-                className="px-2.5 py-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 active:bg-neutral-600 text-neutral-200 text-[10px] font-black uppercase transition-all cursor-pointer border border-neutral-700"
-                title="Finish as open stroke drawing"
-              >
-                Finish Stroke
-              </button>
-            </>
-          )}
-          {ptsPoints.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setPtsPoints([])}
-              className="px-2 py-1 rounded-xl bg-neutral-800/80 hover:bg-red-500/20 text-neutral-400 hover:text-red-300 text-[10px] font-bold uppercase transition-all cursor-pointer border border-neutral-800 hover:border-red-500/40"
-              title="Clear placed points"
-            >
-              Reset
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Floating HUD Bar for Master Controllers (MCT) */}
-      {activeTool === 'MASTER_CONTROLLER' && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-neutral-900/90 backdrop-blur border border-amber-500/40 px-4 py-2 rounded-2xl shadow-xl flex items-center gap-3 animate-fade-in pointer-events-auto">
-          <span className="text-[11px] font-black text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-            Master Controller
-          </span>
-          <div className="h-4 w-px bg-neutral-800" />
-          <button
-            type="button"
-            onClick={() => {
-              if (onUpdateMasterControllers) {
-                const newWidget = {
-                  id: 'mc_' + Date.now(),
-                  name: 'Joystick ' + ((masterControllers?.length || 0) + 1),
-                  type: 'joystick2d',
-                  x: Math.round((artboardW || 1000) / 2 - 60),
-                  y: Math.round((artboardH || 700) / 2 - 50),
-                  width: 120,
-                  height: 100,
-                  valX: 0,
-                  valY: 0,
-                  propertyMappings: selectedObjectId ? [
-                    { objectId: selectedObjectId, property: 'rotation', minVal: -45, maxVal: 45, axis: 'x' },
-                    { objectId: selectedObjectId, property: 'scaleY', minVal: 0.8, maxVal: 1.2, axis: 'y' }
-                  ] : []
-                };
-                onUpdateMasterControllers([...(masterControllers || []), newWidget]);
-                setActiveMasterWidgetId(newWidget.id);
-              }
-            }}
-            className="px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-[10px] font-black uppercase transition-all cursor-pointer shadow"
-          >
-            + Add 2D Joystick
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (onUpdateMasterControllers) {
-                const newWidget = {
-                  id: 'mc_' + Date.now(),
-                  name: 'Slider ' + ((masterControllers?.length || 0) + 1),
-                  type: 'slider',
-                  x: Math.round((artboardW || 1000) / 2 - 60),
-                  y: Math.round((artboardH || 700) / 2 - 30),
-                  width: 140,
-                  height: 60,
-                  valX: 0,
-                  valY: 0,
-                  propertyMappings: selectedObjectId ? [
-                    { objectId: selectedObjectId, property: 'rotation', minVal: -90, maxVal: 90, axis: 'x' }
-                  ] : []
-                };
-                onUpdateMasterControllers([...(masterControllers || []), newWidget]);
-                setActiveMasterWidgetId(newWidget.id);
-              }
-            }}
-            className="px-2.5 py-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[10px] font-black uppercase transition-all cursor-pointer border border-neutral-700"
-          >
-            + Add Slider
-          </button>
-          {masterControllers && masterControllers.length > 0 && (
-            <button
-              type="button"
-              onClick={() => onUpdateMasterControllers && onUpdateMasterControllers([])}
-              className="px-2 py-1 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 text-[10px] font-bold uppercase transition-all cursor-pointer"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Floating HUD Bar for Peg Hierarchy (PEG) */}
-      {activeTool === 'PEG_HIERARCHY' && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-neutral-900/90 backdrop-blur border border-purple-500/40 px-4 py-2 rounded-2xl shadow-xl flex items-center gap-3 animate-fade-in pointer-events-auto">
-          <span className="text-[11px] font-black text-purple-400 uppercase tracking-wide flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
-            Peg Hierarchy
-          </span>
-          <div className="h-4 w-px bg-neutral-800" />
-          <button
-            type="button"
-            onClick={() => {
-              if (onUpdatePegNodes) {
-                const parentId = activePegId || (pegNodes && pegNodes.length > 0 ? pegNodes[pegNodes.length - 1].id : null);
-                const newPeg = {
-                  id: 'peg_' + Date.now(),
-                  name: 'Peg ' + ((pegNodes?.length || 0) + 1),
-                  position: { x: Math.round((artboardW || 1000) / 2), y: Math.round((artboardH || 700) / 2) },
-                  parentId: parentId,
-                  attachedObjectIds: selectedObjectId ? [selectedObjectId] : []
-                };
-                onUpdatePegNodes([...(pegNodes || []), newPeg]);
-                setActivePegId(newPeg.id);
-              }
-            }}
-            className="px-2.5 py-1 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-black uppercase transition-all cursor-pointer shadow"
-          >
-            + Add Peg Node
-          </button>
-          {selectedObjectId && activePegId && pegNodes && onUpdatePegNodes && (
-            <button
-              type="button"
-              onClick={() => {
-                const updated = pegNodes.map(p => p.id === activePegId ? {
-                  ...p,
-                  attachedObjectIds: Array.from(new Set([...(p.attachedObjectIds || []), selectedObjectId]))
-                } : p);
-                onUpdatePegNodes(updated);
-              }}
-              className="px-2.5 py-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-purple-300 text-[10px] font-black uppercase transition-all cursor-pointer border border-neutral-700"
-            >
-              Attach Active Object
-            </button>
-          )}
-          {pegNodes && pegNodes.length > 0 && (
-            <button
-              type="button"
-              onClick={() => onUpdatePegNodes && onUpdatePegNodes([])}
-              className="px-2 py-1 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 text-[10px] font-bold uppercase transition-all cursor-pointer"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Floating HUD Bar for Bone Deformer (BNC / BONE_CURVE) */}
-      {(activeTool === 'BONE_CURVE' || activeTool === 'BNC') && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-neutral-900/90 backdrop-blur border border-amber-500/40 px-4 py-2 rounded-2xl shadow-xl flex items-center gap-3 animate-fade-in pointer-events-auto">
-          <span className="text-[11px] font-black text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-            Bone & Curve Deformer
-          </span>
-          <div className="h-4 w-px bg-neutral-800" />
-          <p className="text-[10px] text-neutral-300 font-medium">Click on your drawing or canvas to place bone joint nodes and bend limbs.</p>
-          {selectedObjectId && (
-            <button
-              type="button"
-              onClick={() => handleVdfClearPoints(selectedObjectId)}
-              className="px-2 py-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[10px] font-bold uppercase transition-all cursor-pointer border border-neutral-700"
-            >
-              Reset Joints
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Canvas bottom controls (zoom HUD) */}
 

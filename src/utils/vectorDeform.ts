@@ -119,8 +119,10 @@ export function calculateCustomVectorDeformedPoints(
           }
         }
       }
-    } else {
-      // Standalone node influences
+    }
+
+    // Also check standalone node influences if not already captured
+    if (!isCaptured) {
       for (let n = 0; n < nodeDisplacements.length; n++) {
         const nd = nodeDisplacements[n];
         const dist = Math.hypot(pt.x - nd.origX, pt.y - nd.origY);
@@ -141,10 +143,10 @@ export function calculateCustomVectorDeformedPoints(
     const ext = pt as Point & { p1?: Point; p2?: Point };
     return {
       ...pt,
-      x: Number((pt.x + dispX).toFixed(2)),
-      y: Number((pt.y + dispY).toFixed(2)),
-      ...(ext.p1 ? { p1: { x: Number((ext.p1.x + dispX).toFixed(2)), y: Number((ext.p1.y + dispY).toFixed(2)) } } : {}),
-      ...(ext.p2 ? { p2: { x: Number((ext.p2.x + dispX).toFixed(2)), y: Number((ext.p2.y + dispY).toFixed(2)) } } : {})
+      x: Number((pt.x + dispX).toFixed(6)),
+      y: Number((pt.y + dispY).toFixed(6)),
+      ...(ext.p1 ? { p1: { x: Number((ext.p1.x + dispX).toFixed(6)), y: Number((ext.p1.y + dispY).toFixed(6)) } } : {}),
+      ...(ext.p2 ? { p2: { x: Number((ext.p2.x + dispX).toFixed(6)), y: Number((ext.p2.y + dispY).toFixed(6)) } } : {})
     };
   });
 }

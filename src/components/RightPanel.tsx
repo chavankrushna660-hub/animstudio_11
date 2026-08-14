@@ -50,10 +50,16 @@ import {
   Wand2,
   Grid,
   Edit3,
-  CircleDot
+  CircleDot,
+  Spline,
+  Smile,
+  Copy,
+  Eye,
+  EyeOff,
+  Check
 } from 'lucide-react';
 import { calculateCustomVectorDeformedPoints, calculateRigidLinearDeformedPoints } from '../utils/vectorDeform';
-import { VectorObject, Bone, Layer, Pivot, Transform, Point, Frame, RealismSettings, SmartMeshColorState, SmartWarpState, ColorMeshPoint, ColorMeshCell, BrushSettings, LiquifyBrushSettings, SubExtrusion, CustomVectorDeformNode, PointShapeState, PointShapeNode, SculptBrushState } from '../types';
+import { VectorObject, Bone, Layer, Pivot, Transform, Point, Frame, RealismSettings, SmartMeshColorState, SmartWarpState, ColorMeshPoint, ColorMeshCell, BrushSettings, LiquifyBrushSettings, SubExtrusion, CustomVectorDeformNode, PointShapeState, PointShapeNode, SculptBrushState, ShapeStudioWorkspace, ShapeStudioPart, MaskRegion } from '../types';
 import { distance, localToWorld, worldToLocal, calculateBoundingBox, isPointInPolygon, findClosestView360, rotatePoint, finalizeContinuousObject, extractAllSubPaths, unifyStrokesToSinglePath, resamplePointsBySpacing, extrudeVertices, smoothSelectedVertices, flattenSelectedVertices, mirrorSelectedVertices, simplifyPointShapeNodes } from '../utils/math';
 import { extrude2DTo3D, deleteFace3D, extrudeFace3D, extrudeEdge3D } from '../utils/engine3D';
 import CustomSelect from './CustomSelect';
@@ -183,6 +189,30 @@ interface RightPanelProps {
   setPointShapeState?: React.Dispatch<React.SetStateAction<PointShapeState>>;
   sculptBrushState?: SculptBrushState;
   setSculptBrushState?: React.Dispatch<React.SetStateAction<SculptBrushState>>;
+  lineToolRadius?: number;
+  setLineToolRadius?: (val: number) => void;
+  lineToolSmoothness?: number;
+  setLineToolSmoothness?: (val: number) => void;
+  lineToolMode?: 'reshape' | 'extrude_part' | 'point_edit' | 'custom_points';
+  setLineToolMode?: (mode: 'reshape' | 'extrude_part' | 'point_edit' | 'custom_points') => void;
+  lineToolPartType?: 'crease' | 'eyelash' | 'ear' | 'branch' | 'freeform';
+  setLineToolPartType?: (type: 'crease' | 'eyelash' | 'ear' | 'branch' | 'freeform') => void;
+  lineToolPartStrokeColor?: string;
+  setLineToolPartStrokeColor?: (color: string) => void;
+  lineToolPartFillColor?: string;
+  setLineToolPartFillColor?: (color: string) => void;
+  lineToolPartStrokeWidth?: number;
+  setLineToolPartStrokeWidth?: (width: number) => void;
+  lineToolActiveSubPathIdx?: number | null;
+  setLineToolActiveSubPathIdx?: (idx: number | null) => void;
+  shapeStudioWorkspaces?: ShapeStudioWorkspace[];
+  setShapeStudioWorkspaces?: React.Dispatch<React.SetStateAction<ShapeStudioWorkspace[]>>;
+  activeShapeStudioWorkspaceId?: string | null;
+  setActiveShapeStudioWorkspaceId?: (id: string | null) => void;
+  maskToolMode?: 'hide' | 'show';
+  setMaskToolMode?: (mode: 'hide' | 'show') => void;
+  maskDrawType?: 'lasso' | 'polygon' | 'box';
+  setMaskDrawType?: (type: 'lasso' | 'polygon' | 'box') => void;
 }
 
 const isChildInsideParent = (
@@ -284,6 +314,30 @@ export default function RightPanel({
   setPointShapeState,
   sculptBrushState,
   setSculptBrushState,
+  lineToolRadius = 80,
+  setLineToolRadius,
+  lineToolSmoothness = 0.75,
+  setLineToolSmoothness,
+  lineToolMode = 'reshape',
+  setLineToolMode,
+  lineToolPartType = 'crease',
+  setLineToolPartType,
+  lineToolPartStrokeColor = '#000000',
+  setLineToolPartStrokeColor,
+  lineToolPartFillColor = 'transparent',
+  setLineToolPartFillColor,
+  lineToolPartStrokeWidth = 3,
+  setLineToolPartStrokeWidth,
+  lineToolActiveSubPathIdx = null,
+  setLineToolActiveSubPathIdx,
+  shapeStudioWorkspaces = EMPTY_ARRAY,
+  setShapeStudioWorkspaces,
+  activeShapeStudioWorkspaceId = null,
+  setActiveShapeStudioWorkspaceId,
+  maskToolMode = 'hide',
+  setMaskToolMode,
+  maskDrawType = 'lasso',
+  setMaskDrawType,
 }: RightPanelProps) {
   // Active lasso selection points
   const activeLasso = (lassoPoints && lassoPoints.length >= 3) ? lassoPoints : penLassoPoints;
@@ -6478,9 +6532,286 @@ export default function RightPanel({
                   </div>
                 )}
 
+                {/* 〰️ LINE TOOL (LIN) RIGHT PANEL CONTROLS */}
+                {activeTool === 'LIN' && (
+                  <div className="space-y-4 bg-cyan-500/5 p-4 rounded-2xl border border-cyan-400/20 shadow-lg shadow-black/20 animate-fade-in" id="rightpanel-line-tool">
+                    <div className="flex items-center justify-between border-b border-cyan-500/10 pb-2.5">
+                      <span className="text-xs font-black uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                        <Spline className="w-4 h-4 text-cyan-400 animate-pulse" />
+                        Line Tool (LIN) - Shape Reshaper
+                      </span>
+                      <span className="bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 text-[8px] font-black px-2 py-0.5 rounded-full uppercase">
+                        {lineToolMode === 'reshape' ? 'Reshape' : lineToolMode === 'extrude_part' ? 'Stretch Part' : lineToolMode === 'point_edit' ? 'Point Edit' : 'Custom Points'}
+                      </span>
+                    </div>
+
+                    {!selectedObject ? (
+                      <p className="text-[10px] text-neutral-400 font-bold leading-normal">
+                        Select any drawing or shape on canvas to activate on-stroke Line Reshaper!
+                      </p>
+                    ) : (
+                      <div className="space-y-3.5 text-xs">
+                        {/* Mode Switcher */}
+                        <div className="grid grid-cols-2 gap-1.5 bg-neutral-900/90 p-1.5 rounded-xl border border-neutral-800">
+                          <button
+                            type="button"
+                            onClick={() => setLineToolMode && setLineToolMode('reshape')}
+                            className={`py-1.5 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                              lineToolMode === 'reshape'
+                                ? 'bg-cyan-500 text-neutral-950 shadow-md font-extrabold'
+                                : 'text-neutral-400 hover:text-cyan-300 hover:bg-neutral-800'
+                            }`}
+                          >
+                            <Spline className="w-3.5 h-3.5" />
+                            <span>Reshape</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setLineToolMode && setLineToolMode('extrude_part')}
+                            className={`py-1.5 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                              lineToolMode === 'extrude_part'
+                                ? 'bg-cyan-500 text-neutral-950 shadow-md font-extrabold'
+                                : 'text-neutral-400 hover:text-cyan-300 hover:bg-neutral-800'
+                            }`}
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Stretch Part</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setLineToolMode && setLineToolMode('point_edit')}
+                            className={`py-1.5 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                              lineToolMode === 'point_edit'
+                                ? 'bg-cyan-500 text-neutral-950 shadow-md font-extrabold'
+                                : 'text-neutral-400 hover:text-cyan-300 hover:bg-neutral-800'
+                            }`}
+                          >
+                            <GitCommit className="w-3.5 h-3.5" />
+                            <span>Point Edit</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setLineToolMode && setLineToolMode('custom_points')}
+                            className={`py-1.5 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                              lineToolMode === 'custom_points'
+                                ? 'bg-cyan-500 text-neutral-950 shadow-md font-extrabold'
+                                : 'text-neutral-400 hover:text-cyan-300 hover:bg-neutral-800'
+                            }`}
+                          >
+                            <CircleDot className="w-3.5 h-3.5" />
+                            <span>Custom Points</span>
+                          </button>
+                        </div>
+
+                        {/* Sliders */}
+                        <div className="space-y-2 bg-neutral-900/80 p-2.5 rounded-xl border border-neutral-800">
+                          <div className="flex justify-between items-center text-[10px]">
+                            <span className="text-neutral-300 font-bold uppercase tracking-wider">Influence Radius</span>
+                            <span className="font-mono text-cyan-400 font-black">{lineToolRadius}px</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="20"
+                            max="250"
+                            step="5"
+                            value={lineToolRadius}
+                            onChange={(e) => setLineToolRadius && setLineToolRadius(parseFloat(e.target.value))}
+                            className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
+                          />
+                        </div>
+
+                        <div className="space-y-2 bg-neutral-900/80 p-2.5 rounded-xl border border-neutral-800">
+                          <div className="flex justify-between items-center text-[10px]">
+                            <span className="text-neutral-300 font-bold uppercase tracking-wider">Smoothness Curve</span>
+                            <span className="font-mono text-cyan-400 font-black">{Math.round(lineToolSmoothness * 100)}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.1"
+                            max="1.0"
+                            step="0.05"
+                            value={lineToolSmoothness}
+                            onChange={(e) => setLineToolSmoothness && setLineToolSmoothness(parseFloat(e.target.value))}
+                            className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setActiveTool('SEL')}
+                          className="w-full py-2 bg-cyan-500 text-neutral-950 hover:bg-cyan-400 text-[10px] font-black rounded-xl transition-all uppercase tracking-wider text-center block shadow cursor-pointer"
+                        >
+                          ✓ Done Reshaping (Return to Select)
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 🎭 SHAPE STUDIO (SHS) RIGHT PANEL CONTROLS */}
+                {activeTool === 'SHS' && (
+                  <div className="space-y-4 bg-purple-500/5 p-4 rounded-2xl border border-purple-400/20 shadow-lg shadow-black/20 animate-fade-in" id="rightpanel-shape-studio">
+                    <div className="flex items-center justify-between border-b border-purple-500/10 pb-2.5">
+                      <span className="text-xs font-black uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
+                        <Smile className="w-4 h-4 text-purple-400 animate-pulse" />
+                        Shape Studio (SHS) - Poses & Swappable Parts
+                      </span>
+                      <span className="bg-purple-500/20 border border-purple-400/40 text-purple-300 text-[8px] font-black px-2 py-0.5 rounded-full uppercase">
+                        Parts Engine
+                      </span>
+                    </div>
+
+                    {!selectedObject ? (
+                      <div className="bg-neutral-900/80 p-3 rounded-xl border border-neutral-800 text-[10px] text-neutral-400 font-medium">
+                        Select a base character or drawing on canvas to attach modular parts (e.g. mouth open/close, eyes blink, hand gestures).
+                      </div>
+                    ) : (
+                      <div className="space-y-3.5 text-xs">
+                        <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-2.5 text-[9.5px] text-purple-200 font-medium">
+                          Active Base: <b className="text-purple-300">{selectedObject.name}</b>. Parts attached here are permanently locked to move and rotate with this drawing.
+                        </div>
+
+                        {/* Attach Selected Drawing / PNG as Modular Part Button */}
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const partId = `part_${Date.now()}`;
+                              const wsId = `ws_${Date.now()}`;
+                              const newPart: ShapeStudioPart = {
+                                id: partId,
+                                name: `Part ${Object.keys(objects).length + 1}`,
+                                category: 'mouth',
+                                objectId: selectedObject.id,
+                                visible: true,
+                                relativeTransform: {
+                                  dx: 0,
+                                  dy: 0,
+                                  rotationOffset: 0,
+                                  scaleXRatio: 1,
+                                  scaleYRatio: 1
+                                },
+                                createdAt: Date.now()
+                              };
+
+                              if (setShapeStudioWorkspaces) {
+                                setShapeStudioWorkspaces(prev => {
+                                  const existingWs = prev.find(w => w.baseObjectId === selectedObject.id);
+                                  if (existingWs) {
+                                    return prev.map(w => w.id === existingWs.id ? {
+                                      ...w,
+                                      parts: [...w.parts, newPart]
+                                    } : w);
+                                  }
+                                  const newWs: ShapeStudioWorkspace = {
+                                    id: wsId,
+                                    name: `${selectedObject.name} Rig`,
+                                    baseObjectId: selectedObject.id,
+                                    parts: [newPart]
+                                  };
+                                  return [...prev, newWs];
+                                });
+                              }
+
+                              updateObject(selectedObject.id, {
+                                shapeStudioAttachedTo: {
+                                  baseObjectId: selectedObject.id,
+                                  workspaceId: wsId,
+                                  partId: partId,
+                                  partName: newPart.name,
+                                  category: 'mouth',
+                                  relativeTransform: {
+                                    dx: 0,
+                                    dy: 0,
+                                    rotationOffset: 0,
+                                    scaleXRatio: 1,
+                                    scaleYRatio: 1
+                                  }
+                                }
+                              });
+                            }}
+                            className="w-full py-2 bg-purple-600 hover:bg-purple-500 text-white font-black rounded-xl text-[10px] uppercase tracking-wider transition-all cursor-pointer shadow flex items-center justify-center gap-1.5"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            + Register Active Shape as Swappable Part
+                          </button>
+                        </div>
+
+                        {/* Workspaces & Attached Parts List */}
+                        {shapeStudioWorkspaces && shapeStudioWorkspaces.length > 0 && (
+                          <div className="space-y-2 pt-1">
+                            <span className="text-[10px] font-black uppercase text-neutral-400 tracking-wider block">
+                              Swappable Parts Hierarchy
+                            </span>
+                            {shapeStudioWorkspaces.map(ws => (
+                              <div key={ws.id} className="bg-neutral-900/90 border border-neutral-800 rounded-xl p-2.5 space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-bold text-neutral-300">
+                                  <span>{ws.name}</span>
+                                  <span className="text-purple-400 font-mono text-[9px]">{ws.parts.length} parts</span>
+                                </div>
+                                <div className="space-y-1">
+                                  {ws.parts.map(part => {
+                                    const partObj = objects[part.objectId];
+                                    const isVis = partObj ? !partObj.isHidden : part.visible;
+                                    return (
+                                      <div key={part.id} className="flex items-center justify-between bg-neutral-950 p-1.5 rounded-lg border border-neutral-850 text-[9px]">
+                                        <span className="font-bold text-neutral-300 truncate max-w-[120px]">
+                                          {part.name}
+                                        </span>
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (partObj) {
+                                                updateObject(part.objectId, { isHidden: !partObj.isHidden });
+                                              }
+                                              if (setShapeStudioWorkspaces) {
+                                                setShapeStudioWorkspaces(prev => prev.map(w => w.id === ws.id ? {
+                                                  ...w,
+                                                  parts: w.parts.map(p => p.id === part.id ? { ...p, visible: !p.visible } : p)
+                                                } : w));
+                                              }
+                                            }}
+                                            className={`p-1 rounded cursor-pointer ${isVis ? 'bg-purple-500/20 text-purple-300' : 'bg-neutral-800 text-neutral-500'}`}
+                                            title={isVis ? "Hide part" : "Show part"}
+                                          >
+                                            {isVis ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (setShapeStudioWorkspaces) {
+                                                setShapeStudioWorkspaces(prev => prev.map(w => w.id === ws.id ? {
+                                                  ...w,
+                                                  parts: w.parts.filter(p => p.id !== part.id)
+                                                } : w));
+                                              }
+                                            }}
+                                            className="p-1 text-neutral-500 hover:text-red-400 rounded cursor-pointer"
+                                            title="Delete part registration"
+                                          >
+                                            <Trash2 className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* VECTOR CURVE, PBM AND RIGID POINT DEFORMER PANEL */}
                 {(activeTool === "PBM" || activeTool === "VDF" || activeTool === "VPR" || activeTool === "RPD") && (
-                  <div className="space-y-4 bg-blue-500/5 p-4 rounded-2xl border border-blue-400/20 shadow-lg shadow-black/20 animate-fade-in">
+                  <div className="space-y-4 bg-blue-500/5 p-4 rounded-2xl border border-blue-400/20 shadow-lg shadow-black/20 animate-fade-in" id="rightpanel-vpr-tool">
                     <div className="flex items-center justify-between border-b border-blue-500/10 pb-2.5">
                       <span className="text-xs font-black uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
                         <GitCommit className="w-4 h-4 text-blue-500" />
@@ -6495,7 +6826,7 @@ export default function RightPanel({
                     ) : (
                       <div className="space-y-3 text-xs">
                         <p className="text-[10px] text-neutral-300 leading-normal font-medium">
-                          Click anywhere on drawing to place <b>Blue Points</b>. When 2 or more points are placed, drag points to move drawing sections strictly as-is without stroke distortion or overlap.
+                          Click anywhere on drawing to place <b>Blue Points</b>. When placed, click <b>"Done (Weight & Bind Points)"</b> to lock weights with 0.000001px precision and drag points smoothly.
                         </p>
 
                         {(() => {
@@ -6505,34 +6836,74 @@ export default function RightPanel({
                             nodes: [],
                             stiffness: 50,
                             captureRadius: 50,
-                            rigidLinear: activeTool === "PBM" || activeTool === "RPD"
+                            rigidLinear: activeTool === "PBM" || activeTool === "RPD",
+                            isBound: false
                           };
 
                           const nodeCount = vdfState.nodes ? vdfState.nodes.length : 0;
                           const isRigid = activeTool === "PBM" || activeTool === "RPD" || vdfState.rigidLinear;
+                          const isBound = !!vdfState.isBound;
 
                           return (
                             <div className="space-y-3">
-                              {/* 2-Point Requirement Status Banner */}
-                              {nodeCount < 2 ? (
+                              {/* Requirement Status Banner */}
+                              {nodeCount === 0 ? (
                                 <div className="bg-amber-500/10 border border-amber-500/30 p-2.5 rounded-xl text-[10px] text-amber-300 font-bold text-center space-y-1">
                                   <span className="text-amber-400 font-black block uppercase tracking-wider flex items-center justify-center gap-1">
                                     <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                                    Add 2 or More Points to Rigid Deform
+                                    Click on Drawing to Place Points
                                   </span>
                                   <p className="text-[9px] text-neutral-300 font-medium leading-normal">
-                                    Click on drawing (e.g. shoulder start point &amp; hand end point). Minimum 2 points are strictly required!
+                                    Click anywhere on your drawing strokes (e.g. elbow, knee, mouth, limb contour).
+                                  </p>
+                                </div>
+                              ) : isBound ? (
+                                <div className="bg-emerald-500/10 border border-emerald-500/30 p-2.5 rounded-xl text-[10px] text-emerald-300 font-bold text-center space-y-1">
+                                  <span className="text-emerald-400 font-black block uppercase tracking-wider flex items-center justify-center gap-1">
+                                    ✅ {nodeCount} Points Locked &amp; Active
+                                  </span>
+                                  <p className="text-[9px] text-neutral-300 font-medium leading-normal">
+                                    Points move strictly with strokes (0.000001px precision). Outside areas stay 100% frozen!
                                   </p>
                                 </div>
                               ) : (
-                                <div className="bg-emerald-500/10 border border-emerald-500/30 p-2.5 rounded-xl text-[10px] text-emerald-300 font-bold text-center space-y-1">
-                                  <span className="text-emerald-400 font-black block uppercase tracking-wider flex items-center justify-center gap-1">
-                                    ✅ {nodeCount} Joint Points Active
+                                <div className="bg-blue-500/10 border border-blue-500/30 p-2.5 rounded-xl text-[10px] text-blue-300 font-bold text-center space-y-1">
+                                  <span className="text-blue-400 font-black block uppercase tracking-wider flex items-center justify-center gap-1">
+                                    📍 {nodeCount} Placed Points Ready to Bind
                                   </span>
                                   <p className="text-[9px] text-neutral-300 font-medium leading-normal">
-                                    Drag points to move drawing as-is. Stroke shapes, widths &amp; details are strictly preserved without overlap or distortion!
+                                    Click <b>"Done (Weight &amp; Bind Points)"</b> below to lock points through stroke and start moving.
                                   </p>
                                 </div>
+                              )}
+
+                              {/* DONE / BIND POINTS BUTTON */}
+                              {nodeCount > 0 && !isBound && (
+                                <button
+                                  type="button"
+                                  id="rightpanel-vpr-done-bind-btn"
+                                  onClick={() => {
+                                    const origPts = JSON.parse(JSON.stringify(selectedObject.points || []));
+                                    const origSubs = selectedObject.subPaths ? JSON.parse(JSON.stringify(selectedObject.subPaths)) : undefined;
+                                    updateObject(selectedObject.id, {
+                                      points: origPts,
+                                      subPaths: origSubs,
+                                      originalSubPathsBackup: origSubs,
+                                      customVectorDeformState: {
+                                        ...vdfState,
+                                        active: true,
+                                        isDrawingPhase: false,
+                                        isBound: true,
+                                        boundObjectId: selectedObject.id,
+                                        origObjectPoints: origPts
+                                      }
+                                    });
+                                  }}
+                                  className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-neutral-950 font-black rounded-xl text-[10px] uppercase tracking-wider transition-all cursor-pointer shadow-lg flex items-center justify-center gap-1.5"
+                                >
+                                  <Check className="w-4 h-4" />
+                                  Done (Weight &amp; Bind Points)
+                                </button>
                               )}
 
                               {/* Capture Area Radius Slider */}
@@ -6671,7 +7042,8 @@ export default function RightPanel({
                                         active: true,
                                         nodes: autoNodes,
                                         selectedNodeIndex: 0,
-                                        rigidLinear: true
+                                        rigidLinear: true,
+                                        isBound: true
                                       }
                                     });
                                   }}
@@ -6694,7 +7066,8 @@ export default function RightPanel({
                                         customVectorDeformState: {
                                           ...vdfState,
                                           nodes: [],
-                                          isDrawingPhase: true
+                                          isDrawingPhase: true,
+                                          isBound: false
                                         }
                                       });
                                     }}

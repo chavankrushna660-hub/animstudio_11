@@ -25,7 +25,8 @@ import {
   Sliders,
   Activity,
   Move,
-  Spline
+  Spline,
+  EyeOff
 } from 'lucide-react';
 
 interface ToolbarProps {
@@ -83,7 +84,9 @@ export default function Toolbar({
     { id: 'PEG_HIERARCHY', shortId: 'PEG', name: 'Peg Hierarchy', label: 'Peg Hierarchy & Rigging', icon: GitForkIcon, desc: 'Parent-child peg linking and pivot offsets for body mechanics' },
     { id: 'BONE_CURVE', shortId: 'BNC', name: 'Bone Deformer', label: 'Bone & Curve Deformer', icon: ActivityIcon, desc: 'Organic bending and stretching along spline curves for limbs' },
     { id: 'PTS', shortId: 'PTS', name: 'Point Shape Sculptor', label: 'Point Shape Sculptor (PTS)', icon: CircleDot, desc: 'Place points to draw custom shapes, drag points to edit/reshape, and merge vertices.' },
+    { id: 'SHS', shortId: 'SHS', name: 'Shape Studio', label: 'Shape Studio (SHS)', icon: Layers, desc: 'Add and attach custom shapes, drawings, and PNG parts (mouth, eyes, limbs) permanently to character drawings. Swap poses and expressions with 1 click.' },
     { id: 'SCB', shortId: 'SCB', name: 'Sculpt & Correct Brush', label: 'Sculpt & Correct Brush (SCB)', icon: Sparkles, desc: 'Drag brush over any drawing to expand, collapse, smooth, push, or auto-correct strokes and contours.' },
+    { id: 'MSK', shortId: 'MSK', name: 'Area Mask & Hide', label: 'Custom Shape Hide/Show Area (MSK)', icon: EyeOffIcon, desc: 'Draw a custom shape or area on any single individual drawing to hide that specific part. Toggle hide/show or invert masked areas.' },
   ];
 
   return (
@@ -175,3 +178,4 @@ function ZoomInIcon(props: any) { return <ZoomIn {...props} /> }
 function Share2Icon(props: any) { return <Share2 {...props} /> }
 function SlidersIcon(props: any) { return <Sliders {...props} /> }
 function SplineIcon(props: any) { return <Spline {...props} /> }
+function EyeOffIcon(props: any) { return <EyeOff {...props} /> }

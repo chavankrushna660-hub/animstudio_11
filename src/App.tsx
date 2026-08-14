@@ -40,7 +40,7 @@ import CanvasArea from './components/CanvasArea';
 import Timeline from './components/Timeline';
 import CustomDialog, { CustomDialogConfig } from './components/CustomDialog';
 import PythonCodeModal from './components/PythonCodeModal';
-import { VectorObject, Bone, Layer, Frame, Point, RealismSettings, View360, BrushSettings, Transform, LiquifyBrushSettings, PointShapeState, PointShapeNode, SculptBrushState } from './types';
+import { VectorObject, Bone, Layer, Frame, Point, RealismSettings, View360, BrushSettings, Transform, LiquifyBrushSettings, PointShapeState, PointShapeNode, SculptBrushState, ShapeStudioWorkspace, ShapeStudioPart } from './types';
 import { localToWorld, worldToLocal, rotatePoint, calculateBoundingBox, unifyStrokesToSinglePath, isPointInPolygon, findClosestView360 } from './utils/math';
 import { 
   validateSimpleAuth, 
@@ -745,6 +745,7 @@ export default function App() {
       ZOM: 'Zoom & Pan: Pinch to zoom, drag to pan canvas viewport',
       LIN: 'Line Tool: Reshape drawing shape & stroke by directly dragging on-stroke line overlay',
       PTS: 'Points Tool: Click points on canvas to create drawing or shape. Select entire drawing with Select Tool, apply any tool or delete.',
+      SHS: 'Shape Studio: Attach modular shapes and PNG parts permanently to drawings, switch poses & expressions',
       BON: 'Bone Tool: Drag between pivot joints to link skeletal bones',
     };
     const hint = toolHints[activeTool] || `Active Tool: ${activeTool}`;
@@ -752,7 +753,7 @@ export default function App() {
   }, [activeTool]);
 
   // Line Tool (LIN) shape reshape & branch new parts settings
-  const [lineToolMode, setLineToolMode] = useState<'reshape' | 'extrude_part' | 'point_edit'>('reshape');
+  const [lineToolMode, setLineToolMode] = useState<'reshape' | 'extrude_part' | 'point_edit' | 'custom_points'>('reshape');
   const [lineToolRadius, setLineToolRadius] = useState<number>(80);
   const [lineToolSmoothness, setLineToolSmoothness] = useState<number>(0.75);
   const [lineToolPartType, setLineToolPartType] = useState<'crease' | 'eyelash' | 'ear' | 'branch' | 'freeform'>('crease');
@@ -760,6 +761,14 @@ export default function App() {
   const [lineToolPartFillColor, setLineToolPartFillColor] = useState<string>('transparent');
   const [lineToolPartStrokeWidth, setLineToolPartStrokeWidth] = useState<number>(3);
   const [lineToolActiveSubPathIdx, setLineToolActiveSubPathIdx] = useState<number | null>(null);
+
+  // Shape Studio (SHS) character workspaces and swap parts
+  const [shapeStudioWorkspaces, setShapeStudioWorkspaces] = useState<ShapeStudioWorkspace[]>([]);
+  const [activeShapeStudioWorkspaceId, setActiveShapeStudioWorkspaceId] = useState<string | null>(null);
+
+  // Area Mask & Hide Tool (MSK) custom shape hide/show
+  const [maskToolMode, setMaskToolMode] = useState<'hide' | 'show'>('hide');
+  const [maskDrawType, setMaskDrawType] = useState<'lasso' | 'polygon' | 'box'>('lasso');
 
   // Canvas Size States
   const [artboardW, setArtboardW] = useState<number>(() => {
@@ -1059,13 +1068,14 @@ export default function App() {
           h.triggerShortcutHint("Tool: Zoom & Pan (Z)");
           break;
         }
-        // 'u' for unselecting selected drawing
+        // 'u' or Escape for unselecting selected drawing
+        case 'Escape':
         case 'u':
         case 'U': {
           e.preventDefault();
           if (h.setSelectedObjectId) {
             h.setSelectedObjectId(null);
-            h.triggerShortcutHint("Unselected Drawing (U)");
+            h.triggerShortcutHint("Deselected Drawing (Esc)");
           }
           break;
         }
@@ -1532,6 +1542,27 @@ export default function App() {
               }
             }
             updated[k] = { ...sibling, ...siblingUpdates };
+          }
+        });
+      }
+
+      // Sync attached Shape Studio parts when base drawing transforms
+      if (updates.transform) {
+        Object.keys(updated).forEach(k => {
+          const partObj = updated[k];
+          if (partObj && partObj.shapeStudioAttachedTo && partObj.shapeStudioAttachedTo.baseObjectId === id) {
+            const rel = partObj.shapeStudioAttachedTo.relativeTransform || { dx: 0, dy: 0, rotationOffset: 0, scaleXRatio: 1, scaleYRatio: 1 };
+            updated[k] = {
+              ...partObj,
+              transform: {
+                ...partObj.transform,
+                x: updates.transform!.x + (rel.dx || 0),
+                y: updates.transform!.y + (rel.dy || 0),
+                rotation: updates.transform!.rotation + (rel.rotationOffset || 0),
+                scaleX: updates.transform!.scaleX * (rel.scaleXRatio || 1),
+                scaleY: updates.transform!.scaleY * (rel.scaleYRatio || 1)
+              }
+            };
           }
         });
       }
@@ -3855,6 +3886,14 @@ export default function App() {
           setLineToolActiveSubPathIdx={setLineToolActiveSubPathIdx}
           brushSettings={brushSettings}
           setBrushSettings={setBrushSettings}
+          shapeStudioWorkspaces={shapeStudioWorkspaces}
+          setShapeStudioWorkspaces={setShapeStudioWorkspaces}
+          activeShapeStudioWorkspaceId={activeShapeStudioWorkspaceId}
+          setActiveShapeStudioWorkspaceId={setActiveShapeStudioWorkspaceId}
+          maskToolMode={maskToolMode}
+          setMaskToolMode={setMaskToolMode}
+          maskDrawType={maskDrawType}
+          setMaskDrawType={setMaskDrawType}
         />
 
         {/* Central Vector Canvas Area */}
@@ -3955,6 +3994,14 @@ export default function App() {
           setPointShapeState={setPointShapeState}
           sculptBrushState={sculptBrushState}
           setSculptBrushState={setSculptBrushState}
+          shapeStudioWorkspaces={shapeStudioWorkspaces}
+          setShapeStudioWorkspaces={setShapeStudioWorkspaces}
+          activeShapeStudioWorkspaceId={activeShapeStudioWorkspaceId}
+          setActiveShapeStudioWorkspaceId={setActiveShapeStudioWorkspaceId}
+          maskToolMode={maskToolMode}
+          setMaskToolMode={setMaskToolMode}
+          maskDrawType={maskDrawType}
+          setMaskDrawType={setMaskDrawType}
         />
 
         {/* Right Collapsible Properties, Sliders, Smart Pinned Controls */}
@@ -4050,6 +4097,30 @@ export default function App() {
           setPointShapeState={setPointShapeState}
           sculptBrushState={sculptBrushState}
           setSculptBrushState={setSculptBrushState}
+          lineToolMode={lineToolMode}
+          setLineToolMode={setLineToolMode}
+          lineToolRadius={lineToolRadius}
+          setLineToolRadius={setLineToolRadius}
+          lineToolSmoothness={lineToolSmoothness}
+          setLineToolSmoothness={setLineToolSmoothness}
+          lineToolPartType={lineToolPartType}
+          setLineToolPartType={setLineToolPartType}
+          lineToolPartStrokeColor={lineToolPartStrokeColor}
+          setLineToolPartStrokeColor={setLineToolPartStrokeColor}
+          lineToolPartFillColor={lineToolPartFillColor}
+          setLineToolPartFillColor={setLineToolPartFillColor}
+          lineToolPartStrokeWidth={lineToolPartStrokeWidth}
+          setLineToolPartStrokeWidth={setLineToolPartStrokeWidth}
+          lineToolActiveSubPathIdx={lineToolActiveSubPathIdx}
+          setLineToolActiveSubPathIdx={setLineToolActiveSubPathIdx}
+          shapeStudioWorkspaces={shapeStudioWorkspaces}
+          setShapeStudioWorkspaces={setShapeStudioWorkspaces}
+          activeShapeStudioWorkspaceId={activeShapeStudioWorkspaceId}
+          setActiveShapeStudioWorkspaceId={setActiveShapeStudioWorkspaceId}
+          maskToolMode={maskToolMode}
+          setMaskToolMode={setMaskToolMode}
+          maskDrawType={maskDrawType}
+          setMaskDrawType={setMaskDrawType}
         />
       </div>
 

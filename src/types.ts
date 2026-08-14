@@ -330,6 +330,53 @@ export interface VectorObject {
   flexCurveState?: FlexCurveState;
   customVectorDeformState?: CustomVectorDeformState;
   pointShapeState?: PointShapeState;
+  maskRegions?: MaskRegion[];
+  shapeStudioAttachedTo?: {
+    baseObjectId: string;
+    workspaceId: string;
+    partId: string;
+    partName: string;
+    category?: 'mouth' | 'eyes' | 'hands' | 'legs' | 'head' | 'accessory' | 'effect' | 'custom';
+    relativeTransform: {
+      dx: number;
+      dy: number;
+      rotationOffset: number;
+      scaleXRatio: number;
+      scaleYRatio: number;
+    };
+  };
+}
+
+export interface MaskRegion {
+  id: string;
+  name?: string;
+  points: Point[];
+  mode: 'hide' | 'show';
+  visible: boolean;
+  createdAt: number;
+}
+
+export interface ShapeStudioPart {
+  id: string;
+  objectId: string; // The VectorObject id of the part drawing / PNG
+  name: string; // e.g. "Laugh Mouth", "Blink Eyes", "Angry Brow"
+  category: 'mouth' | 'eyes' | 'hands' | 'legs' | 'head' | 'accessory' | 'effect' | 'custom';
+  visible: boolean;
+  relativeTransform: {
+    dx: number;
+    dy: number;
+    rotationOffset: number;
+    scaleXRatio: number;
+    scaleYRatio: number;
+  };
+  createdAt: number;
+}
+
+export interface ShapeStudioWorkspace {
+  id: string;
+  name: string; // Workspace or character name (e.g. "Main Character Rig")
+  baseObjectId: string; // ID of the base drawing or PNG
+  parts: ShapeStudioPart[];
 }
 
 export interface PointShapeNode {
@@ -404,6 +451,8 @@ export interface CustomVectorDeformNode {
 export interface CustomVectorDeformState {
   active: boolean;
   isDrawingPhase: boolean;
+  isBound?: boolean; // Set to true after clicking Done to strictly bind points to stroke/part
+  boundObjectId?: string; // ID of bound drawing or PNG object
   nodes: CustomVectorDeformNode[];
   selectedNodeIndex?: number;
   origObjectPoints?: Point[];

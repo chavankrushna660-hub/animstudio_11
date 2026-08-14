@@ -36,7 +36,7 @@ import {
   Activity,
   RefreshCw
 } from 'lucide-react';
-import { VectorObject, Layer, BrushSettings } from '../types';
+import { VectorObject, Layer, BrushSettings, ShapeStudioWorkspace } from '../types';
 import { getDailyLimitStatus } from '../utils/engine3D';
 import { sanitizeString } from '../utils/securityGuard';
 
@@ -71,6 +71,10 @@ interface LeftPanelProps {
   setLineToolPartStrokeWidth?: (width: number) => void;
   lineToolActiveSubPathIdx?: number | null;
   setLineToolActiveSubPathIdx?: (idx: number | null) => void;
+  shapeStudioWorkspaces?: ShapeStudioWorkspace[];
+  setShapeStudioWorkspaces?: React.Dispatch<React.SetStateAction<ShapeStudioWorkspace[]>>;
+  activeShapeStudioWorkspaceId?: string | null;
+  setActiveShapeStudioWorkspaceId?: (id: string | null) => void;
   brushSettings?: BrushSettings;
   setBrushSettings?: React.Dispatch<React.SetStateAction<BrushSettings>>;
   add3DModel?: (type: 'car' | 'character' | 'chair' | 'sphere' | 'box' | 'sword') => void;
