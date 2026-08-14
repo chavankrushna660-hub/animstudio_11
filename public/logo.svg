@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="redBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#E83535" />
+      <stop offset="100%" stop-color="#C91D1D" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Red Rounded Square Container -->
+  <rect width="512" height="512" rx="90" fill="url(#redBg)" />
+  
+  <!-- White Stylized 'A' Contour -->
+  <path fill="#FFFFFF" fill-rule="evenodd" d="
+    M 188 108
+    C 188 96, 198 90, 212 90
+    L 300 90
+    C 314 90, 324 96, 324 108
+    L 426 385
+    C 432 402, 418 415, 398 415
+    L 330 415
+    C 316 415, 306 405, 301 390
+    L 282 335
+    Q 256 342, 230 335
+    L 211 390
+    C 206 405, 196 415, 182 415
+    L 114 415
+    C 94 415, 80 402, 86 385
+    L 188 108 Z
+
+    M 235 285
+    Q 256 150, 256 148
+    Q 256 150, 277 285
+    Q 256 292, 235 285 Z
+  " />
+</svg>

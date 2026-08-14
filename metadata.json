@@ -1,0 +1,6 @@
+{
+  "name": "AnimStudio 7",
+  "description": "2D/3D Animation Studio featuring vector drawing, keyframe timeline animation, 3D extrusion, PNG deep editing, and vector deformation tools.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
